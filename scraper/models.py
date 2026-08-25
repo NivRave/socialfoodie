@@ -4,6 +4,7 @@ import datetime
 
 class ScrapeRequest(BaseModel):
     url: str
+    raw_text: Optional[str] = None
 
 class ScrapePayload(BaseModel):
     trace_id: str

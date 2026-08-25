@@ -7,10 +7,14 @@ from scraper.publisher import publish_scrape_result
 
 app = FastAPI(title="SocialFoodie Scraper API")
 
-def scrape_and_publish(trace_id: str, url: str):
+def scrape_and_publish(trace_id: str, url: str, raw_text: str = None):
     print(f"[{trace_id}] Starting scrape for {url}")
     try:
-        caption, timestamp = fetch_post_data(url)
+        if raw_text:
+            caption = raw_text
+            timestamp = None
+        else:
+            caption, timestamp = fetch_post_data(url)
         payload = ScrapePayload(
             trace_id=trace_id,
             source_url=url,
@@ -27,7 +31,7 @@ async def scrape_instagram_post(request: ScrapeRequest, background_tasks: Backgr
     trace_id = str(uuid.uuid4())
     
     # Schedule the actual scraping and publishing in the background
-    background_tasks.add_task(scrape_and_publish, trace_id, request.url)
+    background_tasks.add_task(scrape_and_publish, trace_id, request.url, request.raw_text)
     
     return {
         "message": "Scraping task accepted",
