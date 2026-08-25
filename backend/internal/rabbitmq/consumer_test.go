@@ -1,17 +1,17 @@
 package rabbitmq_test
 
 import (
+	"context"
 	"os"
 	"testing"
 	"time"
-	"context"
-	
+
+	"github.com/NivRave/socialfoodie/backend/internal/rabbitmq"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"github.com/NivRave/socialfoodie/backend/internal/rabbitmq"
 )
 
 func TestRabbitMQIntegration(t *testing.T) {
