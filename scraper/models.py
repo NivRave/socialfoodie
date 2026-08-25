@@ -1,9 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, HttpUrl
 from typing import Optional
 import datetime
 
 class ScrapeRequest(BaseModel):
-    url: str
+    url: HttpUrl
     raw_text: Optional[str] = None
 
 class ScrapePayload(BaseModel):
