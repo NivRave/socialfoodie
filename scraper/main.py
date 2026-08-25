@@ -1,18 +1,33 @@
 import uuid
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+import datetime
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from scraper.models import ScrapeRequest, ScrapePayload
+from scraper.instagram import fetch_post_data
+from scraper.publisher import publish_scrape_result
 
 app = FastAPI(title="SocialFoodie Scraper API")
 
-class ScrapeRequest(BaseModel):
-    url: str
+def scrape_and_publish(trace_id: str, url: str):
+    print(f"[{trace_id}] Starting scrape for {url}")
+    try:
+        caption, timestamp = fetch_post_data(url)
+        payload = ScrapePayload(
+            trace_id=trace_id,
+            source_url=url,
+            raw_caption=caption,
+            timestamp=timestamp,
+            scraped_at=datetime.datetime.now(datetime.timezone.utc)
+        )
+        publish_scrape_result(payload)
+    except Exception as e:
+        print(f"[{trace_id}] Scraping task failed: {e}")
 
 @app.post("/scrape", status_code=202)
-async def scrape_instagram_post(request: ScrapeRequest):
+async def scrape_instagram_post(request: ScrapeRequest, background_tasks: BackgroundTasks):
     trace_id = str(uuid.uuid4())
     
-    # TODO: Implement scraping using instaloader or other means
-    # TODO: Push result to RabbitMQ
+    # Schedule the actual scraping and publishing in the background
+    background_tasks.add_task(scrape_and_publish, trace_id, request.url)
     
     return {
         "message": "Scraping task accepted",
@@ -22,4 +37,4 @@ async def scrape_instagram_post(request: ScrapeRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("scraper.main:app", host="0.0.0.0", port=8001, reload=True)
