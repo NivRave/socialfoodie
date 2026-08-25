@@ -53,6 +53,36 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  init-db:
+    image: migrate/migrate:v4.18.1
+    container_name: socialfoodie_init_db
+    volumes:
+      - ./backend/migrations:/migrations
+    command:
+      - -path=/migrations
+      - -database=postgres://foodie_user:foodie_password@postgres:5432/socialfoodie?sslmode=disable
+      - up
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: socialfoodie_worker
+    environment:
+      - DATABASE_URL=postgres://foodie_user:foodie_password@postgres:5432/socialfoodie?sslmode=disable
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   rabbitmq_data:
