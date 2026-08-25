@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: socialfoodie_db
+    environment:
+      POSTGRES_USER: foodie_user
+      POSTGRES_PASSWORD: foodie_password
+      POSTGRES_DB: socialfoodie
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U foodie_user -d socialfoodie"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: socialfoodie_mq
+    environment:
+      RABBITMQ_DEFAULT_USER: foodie_mq
+      RABBITMQ_DEFAULT_PASS: foodie_mq_pass
+    ports:
+      - "5673:5672"   # AMQP
+      - "15673:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  scraper:
+    build:
+      context: ./scraper
+    container_name: socialfoodie_scraper
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=foodie_mq
+      - RABBITMQ_PASS=foodie_mq_pass
+    ports:
+      - "8001:8001"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  rabbitmq_data:

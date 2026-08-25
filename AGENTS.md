@@ -31,3 +31,11 @@ This document dictates the deterministic development flow that all autonomous ag
 *   **Database Migrations:** Schema changes must be version-controlled using a migration tool (e.g., `golang-migrate`). Never manually apply raw SQL changes without a tracked migration file.
 *   **Integration & Contract Testing:** Because the system spans asynchronous boundaries (Python to Go via RabbitMQ), integration or schema contract tests must be written to ensure message payloads do not break between services.
 *   **Secret Management:** Never commit secrets, API keys, or connection strings. Use `.env` files locally and Docker Compose `env_file` configurations. Ensure all secret files are added to `.gitignore`.
+
+## 6. Containerization & Docker
+*   **Multi-Stage Builds:** Always use multi-stage Docker builds to keep final production images as small and secure as possible (e.g., compile in a builder stage and copy only the final binaries to an alpine, scratch, or distroless base image).
+*   **Layer Caching:** Optimize Dockerfile instructions to maximize layer caching. Copy dependency manifests (e.g., `go.mod`/`go.sum` or `requirements.txt`) and install dependencies *before* copying the rest of the source code.
+*   **Non-Root User:** Containers should never run as the root user in production. Always create a dedicated non-root user and group, and use the `USER` directive in the Dockerfile.
+*   **Minimal Base Images:** Prefer minimalistic base images (like `alpine` for Python or `scratch`/`distroless` for Go binaries) to reduce the attack surface and image size.
+*   **Immutable Tags:** Avoid using the `:latest` tag for base images and dependencies. Pin to specific, immutable versions or SHAs to ensure reproducible builds.
+*   **Environment Parity:** The containerized environment should closely mirror production. Use Docker Compose for local development to spin up necessary services (databases, message queues, etc.) and ensure seamless integration testing.

@@ -1,0 +1,39 @@
+# OS / Environment
+.env
+.DS_Store
+*.swp
+*.swo
+
+# IDEs
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Go
+backend/bin/
+backend/obj/
+backend/*.exe
+backend/*.exe~
+backend/*.dll
+backend/*.so
+backend/*.dylib
+backend/*.test
+backend/*.out
+backend/vendor/
+
+# Python
+scraper/__pycache__/
+scraper/*.py[cod]
+scraper/*$py.class
+scraper/.pytest_cache/
+scraper/.venv/
+scraper/venv/
+scraper/ENV/
+scraper/env/
+
+# RabbitMQ / Postgres Data
+.docker-data/
