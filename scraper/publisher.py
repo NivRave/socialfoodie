@@ -18,8 +18,14 @@ def publish_scrape_result(payload: ScrapePayload):
         connection = get_rabbitmq_connection()
         channel = connection.channel()
         
-        # Ensure queue exists
-        channel.queue_declare(queue=QUEUE_NAME, durable=True)
+        # Ensure queue exists with DLX configured
+        channel.queue_declare(
+            queue=QUEUE_NAME, 
+            durable=True,
+            arguments={
+                'x-dead-letter-exchange': 'recipe_dlx'
+            }
+        )
         
         channel.basic_publish(
             exchange='',

@@ -47,10 +47,10 @@ func main() {
 	}
 	defer consumer.Close()
 
-	handler := func(body []byte) error {
+	handler := func(body []byte) (bool, error) {
 		var payload ScrapePayload
 		if err := json.Unmarshal(body, &payload); err != nil {
-			return fmt.Errorf("failed to unmarshal payload: %w", err)
+			return false, fmt.Errorf("failed to unmarshal payload (permanent): %w", err)
 		}
 
 		log.Printf("Processing recipe from %s", payload.SourceURL)
@@ -58,13 +58,13 @@ func main() {
 		// 1. Extract recipe via Gemini
 		recipe, err := llmClient.ExtractRecipe(ctx, payload.RawCaption)
 		if err != nil {
-			return fmt.Errorf("failed to extract recipe via LLM: %w", err)
+			return true, fmt.Errorf("failed to extract recipe via LLM (transient): %w", err)
 		}
 
 		// 2. Insert into DB
 		recipeID, err := database.InsertRecipe(ctx, payload.SourceURL, payload.TraceID, "instagram", payload.RawCaption, &recipe.Name, &recipe.Instructions, &recipe.Difficulty, &recipe.PrepTime)
 		if err != nil {
-			return fmt.Errorf("failed to insert recipe: %w", err)
+			return true, fmt.Errorf("failed to insert recipe (transient): %w", err)
 		}
 
 		// 3. Insert Ingredients and link
@@ -94,16 +94,16 @@ func main() {
 
 		embedding, err := llmClient.GenerateEmbedding(ctx, embedText)
 		if err != nil {
-			return fmt.Errorf("failed to generate embedding: %w", err)
+			return true, fmt.Errorf("failed to generate embedding (transient): %w", err)
 		}
 
 		// 6. Save Embedding
 		if err := database.InsertEmbedding(ctx, recipeID, embedding); err != nil {
-			return fmt.Errorf("failed to insert embedding: %w", err)
+			return true, fmt.Errorf("failed to insert embedding (transient): %w", err)
 		}
 
 		log.Printf("Successfully processed and saved recipe: %s", recipe.Name)
-		return nil
+		return false, nil
 	}
 
 	if err := consumer.StartConsuming("recipe_scraping_queue", handler); err != nil {

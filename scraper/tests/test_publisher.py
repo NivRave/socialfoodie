@@ -21,7 +21,13 @@ def test_publish_scrape_result():
     with patch("scraper.publisher.get_rabbitmq_connection", return_value=mock_connection):
         publish_scrape_result(payload)
 
-    mock_channel.queue_declare.assert_called_with(queue='recipe_scraping_queue', durable=True)
+    mock_channel.queue_declare.assert_called_with(
+        queue='recipe_scraping_queue', 
+        durable=True,
+        arguments={
+            'x-dead-letter-exchange': 'recipe_dlx'
+        }
+    )
     
     mock_channel.basic_publish.assert_called_once()
     args, kwargs = mock_channel.basic_publish.call_args
