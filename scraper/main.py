@@ -4,11 +4,14 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from scraper.models import ScrapeRequest, ScrapePayload
 from scraper.instagram import fetch_post_data
 from scraper.publisher import publish_scrape_result
+from scraper.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 app = FastAPI(title="SocialFoodie Scraper API")
 
 def scrape_and_publish(trace_id: str, url: str, raw_text: str = None):
-    print(f"[{trace_id}] Starting scrape for {url}")
+    logger.info(f"Starting scrape for {url}", extra={"trace_id": trace_id, "url": url})
     try:
         if raw_text:
             caption = raw_text
@@ -24,7 +27,7 @@ def scrape_and_publish(trace_id: str, url: str, raw_text: str = None):
         )
         publish_scrape_result(payload)
     except Exception as e:
-        print(f"[{trace_id}] Scraping task failed: {e}")
+        logger.error(f"Scraping task failed: {e}", extra={"trace_id": trace_id}, exc_info=True)
 
 @app.post("/scrape", status_code=202)
 async def scrape_instagram_post(request: ScrapeRequest, background_tasks: BackgroundTasks):

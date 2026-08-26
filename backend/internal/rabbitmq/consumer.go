@@ -65,10 +65,10 @@ func (c *Consumer) StartConsuming(queueName string, handler func([]byte) (retrya
 	if err := c.ch.ExchangeDeclare("recipe_retry_exchange", "direct", true, false, false, false, nil); err != nil {
 		return fmt.Errorf("failed to declare retry exchange: %w", err)
 	}
-	
+
 	retryArgs := amqp.Table{
-		"x-dead-letter-exchange":    "",         // route back to default exchange
-		"x-dead-letter-routing-key": queueName,  // back to main queue
+		"x-dead-letter-exchange":    "",          // route back to default exchange
+		"x-dead-letter-routing-key": queueName,   // back to main queue
 		"x-message-ttl":             int32(5000), // 5 seconds wait
 	}
 	if _, err := c.ch.QueueDeclare("recipe_retry_queue", true, false, false, false, retryArgs); err != nil {
@@ -132,7 +132,7 @@ func (c *Consumer) StartConsuming(queueName string, handler func([]byte) (retrya
 				d.Nack(false, false) // exhausted, send to DLX
 			} else {
 				log.Printf("Transient error (attempt %d/3): %v. Requeueing via retry exchange.", retryCount+1, err)
-				
+
 				// Ensure headers map exists
 				headers := d.Headers
 				if headers == nil {

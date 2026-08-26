@@ -1,6 +1,9 @@
 import pika
 import os
 from scraper.models import ScrapePayload
+from scraper.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 RABBITMQ_HOST = os.getenv("RABBITMQ_HOST", "localhost")
 RABBITMQ_PORT = int(os.getenv("RABBITMQ_PORT", "5673"))
@@ -36,6 +39,6 @@ def publish_scrape_result(payload: ScrapePayload):
             )
         )
         connection.close()
-        print(f"[{payload.trace_id}] Published to {QUEUE_NAME}")
+        logger.info(f"Published to {QUEUE_NAME}", extra={"trace_id": payload.trace_id, "queue": QUEUE_NAME})
     except Exception as e:
-        print(f"[{payload.trace_id}] Failed to publish to RabbitMQ: {e}")
+        logger.error(f"Failed to publish to RabbitMQ: {e}", extra={"trace_id": payload.trace_id}, exc_info=True)

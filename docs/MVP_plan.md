@@ -18,6 +18,7 @@ This document outlines the Minimum Viable Product (MVP) architecture for `social
 ## 2. Non-Functional Requirements (MVP)
 *   **Reliability:** The scraping and LLM processing must be decoupled. A Dead Letter Exchange (DLX) and retry backoff policy must be implemented in RabbitMQ to handle LLM rate limits or poison pill payloads safely.
 *   **Observability:** A `trace_id` must be propagated from the Python scraper, through RabbitMQ, and into the Go workers for distributed debugging.
+*   **Audit Logging:** The system must maintain an event-driven `audit_logs` table to track the ingestion lifecycle (e.g., successful/failed scraping events) and Agent usage (e.g., recording which MCP tools were executed, at what time, and with what arguments).
 *   **Security:** The system must implement robust prompt injection protections to prevent malicious payloads embedded in Instagram captions from manipulating the LLM.
 *   **Scalability:** Containerized services (Docker) that can be run locally via `docker-compose` for easy development and deployment.
 *   **Scraping Authentication:** The Python scraper must function without Instagram credentials (POC required). If Instagram blocks unauthenticated scraping, alternative strategies (like proxies or sessions) will be evaluated later.
@@ -80,6 +81,15 @@ CREATE TABLE recipe_embeddings (
 
 -- HNSW index for scalable approximate nearest neighbor search
 CREATE INDEX ON recipe_embeddings USING hnsw (embedding vector_cosine_ops);
+
+CREATE TABLE audit_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    trace_id TEXT, -- For linking with RabbitMQ trace_ids
+    event_type TEXT NOT NULL, -- e.g., 'mcp_tool_call', 'ingestion_success', 'ingestion_failed'
+    event_source TEXT NOT NULL, -- e.g., 'mcp_server', 'go_worker', 'python_scraper'
+    details JSONB, -- Flexible payload for tool arguments, error messages, or metadata
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
 ## 6. API & Interfaces

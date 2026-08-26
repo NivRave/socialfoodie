@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/NivRave/socialfoodie/backend/internal/db"
 	"github.com/NivRave/socialfoodie/backend/internal/llm"
+	mylogger "github.com/NivRave/socialfoodie/backend/internal/logger"
 	"github.com/NivRave/socialfoodie/backend/internal/rabbitmq"
 	"github.com/joho/godotenv"
 )
@@ -23,6 +24,7 @@ type ScrapePayload struct {
 
 func main() {
 	godotenv.Load("../.env", "../../.env", ".env")
+	mylogger.Setup()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -30,20 +32,23 @@ func main() {
 	// Initialize DB
 	database, err := db.New(ctx)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 	defer database.Pool.Close()
 
 	// Initialize LLM
 	llmClient, err := llm.NewClient(ctx)
 	if err != nil {
-		log.Fatalf("Failed to initialize LLM client: %v", err)
+		slog.Error("Failed to initialize LLM client", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
 	// Initialize RabbitMQ Consumer
 	consumer, err := rabbitmq.NewConsumer()
 	if err != nil {
-		log.Fatalf("Failed to connect to RabbitMQ: %v", err)
+		slog.Error("Failed to connect to RabbitMQ", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 	defer consumer.Close()
 
@@ -53,36 +58,42 @@ func main() {
 			return false, fmt.Errorf("failed to unmarshal payload (permanent): %w", err)
 		}
 
-		log.Printf("Processing recipe from %s", payload.SourceURL)
+		// Add trace_id to context for downstream logging
+		ctxWithTrace := context.WithValue(ctx, "trace_id", payload.TraceID)
+		traceLogger := mylogger.WithTrace(ctxWithTrace)
+
+		traceLogger.Info("Processing recipe", slog.String("url", payload.SourceURL))
 
 		// 1. Extract recipe via Gemini
-		recipe, err := llmClient.ExtractRecipe(ctx, payload.RawCaption)
+		recipe, err := llmClient.ExtractRecipe(ctxWithTrace, payload.RawCaption)
 		if err != nil {
+			traceLogger.Error("failed to extract recipe via LLM", slog.String("error", err.Error()))
 			return true, fmt.Errorf("failed to extract recipe via LLM (transient): %w", err)
 		}
 
 		// 2. Insert into DB
-		recipeID, err := database.InsertRecipe(ctx, payload.SourceURL, payload.TraceID, "instagram", payload.RawCaption, &recipe.Name, &recipe.Instructions, &recipe.Difficulty, &recipe.PrepTime)
+		recipeID, err := database.InsertRecipe(ctxWithTrace, payload.SourceURL, payload.TraceID, "instagram", payload.RawCaption, &recipe.Name, &recipe.Instructions, &recipe.Difficulty, &recipe.PrepTime)
 		if err != nil {
+			traceLogger.Error("failed to insert recipe", slog.String("error", err.Error()))
 			return true, fmt.Errorf("failed to insert recipe (transient): %w", err)
 		}
 
 		// 3. Insert Ingredients and link
 		for _, ing := range recipe.Ingredients {
-			ingID, err := database.InsertIngredient(ctx, ing.Name)
+			ingID, err := database.InsertIngredient(ctxWithTrace, ing.Name)
 			if err != nil {
-				log.Printf("Warning: failed to insert ingredient %s: %v", ing.Name, err)
+				traceLogger.Warn("failed to insert ingredient", slog.String("ingredient", ing.Name), slog.String("error", err.Error()))
 				continue
 			}
-			if err := database.LinkRecipeIngredient(ctx, recipeID, ingID, ing.Quantity, ing.Unit); err != nil {
-				log.Printf("Warning: failed to link ingredient %s: %v", ing.Name, err)
+			if err := database.LinkRecipeIngredient(ctxWithTrace, recipeID, ingID, ing.Quantity, ing.Unit); err != nil {
+				traceLogger.Warn("failed to link ingredient", slog.String("ingredient", ing.Name), slog.String("error", err.Error()))
 			}
 		}
 
 		// 4. Insert Tags
 		for _, tag := range recipe.Tags {
-			if err := database.InsertRecipeTag(ctx, recipeID, tag.Tag, tag.Reasoning); err != nil {
-				log.Printf("Warning: failed to insert tag %s: %v", tag.Tag, err)
+			if err := database.InsertRecipeTag(ctxWithTrace, recipeID, tag.Tag, tag.Reasoning); err != nil {
+				traceLogger.Warn("failed to insert tag", slog.String("tag", tag.Tag), slog.String("error", err.Error()))
 			}
 		}
 
@@ -92,29 +103,42 @@ func main() {
 			embedText += fmt.Sprintf("Tag: %s ", tag.Tag)
 		}
 
-		embedding, err := llmClient.GenerateEmbedding(ctx, embedText)
+		embedding, err := llmClient.GenerateEmbedding(ctxWithTrace, embedText)
 		if err != nil {
+			traceLogger.Error("failed to generate embedding", slog.String("error", err.Error()))
 			return true, fmt.Errorf("failed to generate embedding (transient): %w", err)
 		}
 
 		// 6. Save Embedding
-		if err := database.InsertEmbedding(ctx, recipeID, embedding); err != nil {
+		if err := database.InsertEmbedding(ctxWithTrace, recipeID, embedding); err != nil {
+			traceLogger.Error("failed to insert embedding", slog.String("error", err.Error()))
 			return true, fmt.Errorf("failed to insert embedding (transient): %w", err)
 		}
 
-		log.Printf("Successfully processed and saved recipe: %s", recipe.Name)
+		// Write to Audit Log (Ingestion Success)
+		auditDetails := map[string]interface{}{
+			"source_url": payload.SourceURL,
+			"recipe_id":  recipeID,
+			"name":       recipe.Name,
+		}
+		if err := database.InsertAuditLog(ctxWithTrace, payload.TraceID, "ingestion_success", "go_worker", auditDetails); err != nil {
+			traceLogger.Error("failed to write audit log", slog.String("error", err.Error()))
+		}
+
+		traceLogger.Info("Successfully processed and saved recipe", slog.String("name", recipe.Name))
 		return false, nil
 	}
 
 	if err := consumer.StartConsuming("recipe_scraping_queue", handler); err != nil {
-		log.Fatalf("Failed to start consuming: %v", err)
+		slog.Error("Failed to start consuming", slog.String("error", err.Error()))
+		os.Exit(1)
 	}
 
-	log.Println("Worker started. Waiting for messages...")
+	slog.Info("Worker started. Waiting for messages...")
 
 	// Wait for interrupt signal
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
-	log.Println("Shutting down worker...")
+	slog.Info("Shutting down worker...")
 }

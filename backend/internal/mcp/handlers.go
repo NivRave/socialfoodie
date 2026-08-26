@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 
 	"github.com/NivRave/socialfoodie/backend/internal/db"
@@ -21,6 +22,7 @@ func NewHandlers(db *db.DB, llmClient *llm.Client) *Handlers {
 }
 
 func (h *Handlers) SearchByIngredientsHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	slog.Info("MCP tool called", slog.String("tool", "search_by_ingredients"))
 	args, ok := request.Params.Arguments.(map[string]interface{})
 	if !ok {
 		return mcp.NewToolResultError("invalid arguments format"), nil
@@ -42,13 +44,16 @@ func (h *Handlers) SearchByIngredientsHandler(ctx context.Context, request mcp.C
 
 	results, err := h.db.SearchByIngredients(ctx, parts, int(limit), 0)
 	if err != nil {
+		slog.Error("Database error in SearchByIngredients", slog.String("error", err.Error()))
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	h.logAudit(ctx, "search_by_ingredients", args, len(results))
 	return formatResults(results), nil
 }
 
 func (h *Handlers) SemanticSearchHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	slog.Info("MCP tool called", slog.String("tool", "semantic_recipe_search"))
 	args, ok := request.Params.Arguments.(map[string]interface{})
 	if !ok {
 		return mcp.NewToolResultError("invalid arguments format"), nil
@@ -65,18 +70,22 @@ func (h *Handlers) SemanticSearchHandler(ctx context.Context, request mcp.CallTo
 
 	embedding, err := h.llm.GenerateEmbedding(ctx, query)
 	if err != nil {
+		slog.Error("LLM error in SemanticSearch", slog.String("error", err.Error()))
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	results, err := h.db.SemanticRecipeSearch(ctx, embedding, int(limit), 0)
 	if err != nil {
+		slog.Error("Database error in SemanticSearch", slog.String("error", err.Error()))
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	h.logAudit(ctx, "semantic_recipe_search", args, len(results))
 	return formatResults(results), nil
 }
 
 func (h *Handlers) GetRecipesByTagsHandler(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	slog.Info("MCP tool called", slog.String("tool", "get_recipes_by_tags"))
 	args, ok := request.Params.Arguments.(map[string]interface{})
 	if !ok {
 		return mcp.NewToolResultError("invalid arguments format"), nil
@@ -98,10 +107,23 @@ func (h *Handlers) GetRecipesByTagsHandler(ctx context.Context, request mcp.Call
 
 	results, err := h.db.GetRecipesByTags(ctx, parts, int(limit), 0)
 	if err != nil {
+		slog.Error("Database error in GetRecipesByTags", slog.String("error", err.Error()))
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	h.logAudit(ctx, "get_recipes_by_tags", args, len(results))
 	return formatResults(results), nil
+}
+
+func (h *Handlers) logAudit(ctx context.Context, toolName string, args map[string]interface{}, resultsCount int) {
+	details := map[string]interface{}{
+		"tool":          toolName,
+		"arguments":     args,
+		"results_found": resultsCount,
+	}
+	if err := h.db.InsertAuditLog(ctx, "", "mcp_tool_call", "mcp_server", details); err != nil {
+		slog.Error("Failed to write audit log", slog.String("error", err.Error()))
+	}
 }
 
 func formatResults(results []db.RecipeResult) *mcp.CallToolResult {
