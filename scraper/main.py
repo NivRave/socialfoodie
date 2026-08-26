@@ -17,7 +17,7 @@ def scrape_and_publish(trace_id: str, url: str, raw_text: str = None):
             caption = raw_text
             timestamp = None
         else:
-            caption, timestamp = fetch_post_data(url)
+            caption, timestamp = fetch_post_data(str(url))
         payload = ScrapePayload(
             trace_id=trace_id,
             source_url=str(url),
