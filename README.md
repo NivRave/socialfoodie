@@ -38,6 +38,14 @@ The system exposes an MCP server for autonomous agents with the following pagina
 
 Every tool call executed by an agent is tracked in the `audit_logs` database table (including tool arguments and results count).
 
+## Getting Started
+
+1. Copy the environment configuration template:
+   `cp .env.example .env`
+2. Update the `.env` file with your `GEMINI_API_KEY` and set secure passwords for PostgreSQL and RabbitMQ.
+3. Start the infrastructure:
+   `docker compose up --build -d`
+
 ## Development Workflow
 
 Please review the [AGENTS.md](AGENTS.md) file before contributing. Key rules include:
