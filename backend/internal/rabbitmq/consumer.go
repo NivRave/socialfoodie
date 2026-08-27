@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -12,6 +13,7 @@ import (
 type Consumer struct {
 	conn *amqp.Connection
 	ch   *amqp.Channel
+	wg   sync.WaitGroup
 }
 
 func NewConsumer() (*Consumer, error) {
@@ -96,7 +98,7 @@ func (c *Consumer) StartConsuming(queueName string, handler func([]byte) (retrya
 
 	msgs, err := c.ch.Consume(
 		queueName,
-		"",    // consumer
+		"worker_consumer", // consumer tag
 		false, // auto-ack (we do manual ack)
 		false, // exclusive
 		false, // no-local
@@ -109,15 +111,18 @@ func (c *Consumer) StartConsuming(queueName string, handler func([]byte) (retrya
 
 	go func() {
 		for d := range msgs {
+			c.wg.Add(1)
 			retryable, err := handler(d.Body)
 			if err == nil {
 				d.Ack(false)
+				c.wg.Done()
 				continue
 			}
 
 			if !retryable {
 				log.Printf("Permanent error processing message: %v. Sending to DLX.", err)
 				d.Nack(false, false) // goes to DLX
+				c.wg.Done()
 				continue
 			}
 
@@ -162,7 +167,16 @@ func (c *Consumer) StartConsuming(queueName string, handler func([]byte) (retrya
 					d.Ack(false)
 				}
 			}
+			c.wg.Done()
 		}
 	}()
 	return nil
+}
+
+func (c *Consumer) StopConsuming() error {
+	return c.ch.Cancel("worker_consumer", false)
+}
+
+func (c *Consumer) Wait() {
+	c.wg.Wait()
 }

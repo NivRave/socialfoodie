@@ -141,5 +141,16 @@ func main() {
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-sigs
-	slog.Info("Shutting down worker...")
+	slog.Info("Shutting down worker. Stopping consumer...")
+	
+	// Stop consuming new messages
+	if err := consumer.StopConsuming(); err != nil {
+		slog.Error("Error stopping consumer", slog.String("error", err.Error()))
+	}
+	
+	// Wait for in-flight messages
+	slog.Info("Waiting for in-flight messages to finish...")
+	consumer.Wait()
+	
+	slog.Info("Worker shutdown complete.")
 }
