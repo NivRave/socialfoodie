@@ -99,11 +99,11 @@ func (c *Consumer) StartConsuming(queueName string, handler func([]byte) (retrya
 	msgs, err := c.ch.Consume(
 		queueName,
 		"worker_consumer", // consumer tag
-		false, // auto-ack (we do manual ack)
-		false, // exclusive
-		false, // no-local
-		false, // no-wait
-		nil,   // args
+		false,             // auto-ack (we do manual ack)
+		false,             // exclusive
+		false,             // no-local
+		false,             // no-wait
+		nil,               // args
 	)
 	if err != nil {
 		return fmt.Errorf("failed to register a consumer: %w", err)
