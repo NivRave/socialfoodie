@@ -25,8 +25,23 @@ def test_scrape_endpoint_success():
         
         mock_publish.assert_called_once()
         args, kwargs = mock_publish.call_args
-        assert args[0].source_url == payload["url"]
+        assert str(args[0].source_url) == payload["url"]
         assert args[0].raw_caption == payload["raw_text"]
+        assert args[0].platform == "instagram"
+
+def test_scrape_endpoint_facebook():
+    payload = {
+        "url": "https://www.facebook.com/watch/?v=123",
+        "raw_text": "FB recipe."
+    }
+
+    with patch("scraper.main.publish_scrape_result") as mock_publish:
+        response = client.post("/scrape", json=payload)
+        assert response.status_code == 202
+
+        mock_publish.assert_called_once()
+        args, kwargs = mock_publish.call_args
+        assert args[0].platform == "facebook"
 
 def test_scrape_endpoint_invalid_url():
     payload = {

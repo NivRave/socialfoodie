@@ -3,3 +3,5 @@ uvicorn
 pika
 instaloader
 pydantic
+python-json-logger
+yt-dlp

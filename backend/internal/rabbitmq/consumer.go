@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -47,17 +48,50 @@ func (c *Consumer) Close() {
 	}
 }
 
-func (c *Consumer) StartConsuming(queueName string, handler func([]byte) error) error {
+// StartConsuming sets up the DLX, DLQ, retry queues, and starts consuming.
+func (c *Consumer) StartConsuming(queueName string, handler func([]byte) (retryable bool, err error)) error {
+	// 1. Declare DLX and DLQ
+	if err := c.ch.ExchangeDeclare("recipe_dlx", "direct", true, false, false, false, nil); err != nil {
+		return fmt.Errorf("failed to declare dlx: %w", err)
+	}
+	if _, err := c.ch.QueueDeclare("recipe_dlq", true, false, false, false, nil); err != nil {
+		return fmt.Errorf("failed to declare dlq: %w", err)
+	}
+	if err := c.ch.QueueBind("recipe_dlq", "", "recipe_dlx", false, nil); err != nil {
+		return fmt.Errorf("failed to bind dlq: %w", err)
+	}
+
+	// 2. Declare Retry Exchange and Queue
+	if err := c.ch.ExchangeDeclare("recipe_retry_exchange", "direct", true, false, false, false, nil); err != nil {
+		return fmt.Errorf("failed to declare retry exchange: %w", err)
+	}
+
+	retryArgs := amqp.Table{
+		"x-dead-letter-exchange":    "",          // route back to default exchange
+		"x-dead-letter-routing-key": queueName,   // back to main queue
+		"x-message-ttl":             int32(5000), // 5 seconds wait
+	}
+	if _, err := c.ch.QueueDeclare("recipe_retry_queue", true, false, false, false, retryArgs); err != nil {
+		return fmt.Errorf("failed to declare retry queue: %w", err)
+	}
+	if err := c.ch.QueueBind("recipe_retry_queue", "", "recipe_retry_exchange", false, nil); err != nil {
+		return fmt.Errorf("failed to bind retry queue: %w", err)
+	}
+
+	// 3. Declare Main Queue
+	mainArgs := amqp.Table{
+		"x-dead-letter-exchange": "recipe_dlx",
+	}
 	_, err := c.ch.QueueDeclare(
 		queueName,
 		true,  // durable
 		false, // delete when unused
 		false, // exclusive
 		false, // no-wait
-		nil,   // arguments
+		mainArgs,
 	)
 	if err != nil {
-		return fmt.Errorf("failed to declare a queue: %w", err)
+		return fmt.Errorf("failed to declare main queue: %w", err)
 	}
 
 	msgs, err := c.ch.Consume(
@@ -75,12 +109,58 @@ func (c *Consumer) StartConsuming(queueName string, handler func([]byte) error) 
 
 	go func() {
 		for d := range msgs {
-			err := handler(d.Body)
-			if err != nil {
-				log.Printf("Error processing message: %v\n", err)
-				d.Nack(false, false)
-			} else {
+			retryable, err := handler(d.Body)
+			if err == nil {
 				d.Ack(false)
+				continue
+			}
+
+			if !retryable {
+				log.Printf("Permanent error processing message: %v. Sending to DLX.", err)
+				d.Nack(false, false) // goes to DLX
+				continue
+			}
+
+			// Handle Transient Errors
+			retryCount := int32(0)
+			if count, ok := d.Headers["x-retry-count"].(int32); ok {
+				retryCount = count
+			}
+
+			if retryCount >= 3 {
+				log.Printf("Exceeded max retries (3) for message. Error: %v. Sending to DLX.", err)
+				d.Nack(false, false) // exhausted, send to DLX
+			} else {
+				log.Printf("Transient error (attempt %d/3): %v. Requeueing via retry exchange.", retryCount+1, err)
+
+				// Ensure headers map exists
+				headers := d.Headers
+				if headers == nil {
+					headers = make(amqp.Table)
+				}
+				headers["x-retry-count"] = retryCount + 1
+
+				errPublish := c.ch.Publish(
+					"recipe_retry_exchange",
+					"",
+					false,
+					false,
+					amqp.Publishing{
+						Headers:      headers,
+						ContentType:  d.ContentType,
+						Body:         d.Body,
+						DeliveryMode: amqp.Persistent,
+						Timestamp:    time.Now(),
+					},
+				)
+
+				if errPublish != nil {
+					log.Printf("Failed to publish to retry exchange: %v. Nacking to DLX as fallback.", errPublish)
+					d.Nack(false, false)
+				} else {
+					// Successfully published to retry exchange, so we ack the original message
+					d.Ack(false)
+				}
 			}
 		}
 	}()

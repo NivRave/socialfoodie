@@ -59,15 +59,18 @@ func TestRabbitMQIntegration(t *testing.T) {
 	require.NoError(t, err)
 	defer pubCh.Close()
 
-	_, err = pubCh.QueueDeclare("test_queue", true, false, false, false, nil)
+	testArgs := amqp.Table{
+		"x-dead-letter-exchange": "recipe_dlx",
+	}
+	_, err = pubCh.QueueDeclare("test_queue", true, false, false, false, testArgs)
 	require.NoError(t, err)
 
 	msgProcessed := make(chan string)
 
 	// Consume
-	err = consumer.StartConsuming("test_queue", func(body []byte) error {
+	err = consumer.StartConsuming("test_queue", func(body []byte) (bool, error) {
 		msgProcessed <- string(body)
-		return nil
+		return false, nil
 	})
 	require.NoError(t, err)
 

@@ -8,7 +8,8 @@ class ScrapeRequest(BaseModel):
 
 class ScrapePayload(BaseModel):
     trace_id: str
-    source_url: str
-    raw_caption: Optional[str]
-    timestamp: Optional[datetime.datetime]
+    source_url: HttpUrl
+    platform: str
+    raw_caption: Optional[str] = None
+    timestamp: Optional[datetime.datetime] = None
     scraped_at: datetime.datetime
