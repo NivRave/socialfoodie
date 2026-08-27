@@ -9,6 +9,7 @@ def test_publish_scrape_result():
     payload = ScrapePayload(
         trace_id="test-123",
         source_url="https://www.instagram.com/p/test/",
+        platform="instagram",
         raw_caption="Recipe text",
         timestamp=None,
         scraped_at=datetime.datetime.now(datetime.timezone.utc)

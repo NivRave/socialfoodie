@@ -19,6 +19,7 @@ import (
 type ScrapePayload struct {
 	TraceID    string `json:"trace_id"`
 	SourceURL  string `json:"source_url"`
+	Platform   string `json:"platform"`
 	RawCaption string `json:"raw_caption"`
 }
 
@@ -72,7 +73,7 @@ func main() {
 		}
 
 		// 2. Insert into DB
-		recipeID, err := database.InsertRecipe(ctxWithTrace, payload.SourceURL, payload.TraceID, "instagram", payload.RawCaption, &recipe.Name, &recipe.Instructions, &recipe.Difficulty, &recipe.PrepTime)
+		recipeID, err := database.InsertRecipe(ctxWithTrace, payload.SourceURL, payload.TraceID, payload.Platform, payload.RawCaption, &recipe.Name, &recipe.Instructions, &recipe.Difficulty, &recipe.PrepTime)
 		if err != nil {
 			traceLogger.Error("failed to insert recipe", slog.String("error", err.Error()))
 			return true, fmt.Errorf("failed to insert recipe (transient): %w", err)

@@ -13,14 +13,29 @@ app = FastAPI(title="SocialFoodie Scraper API")
 def scrape_and_publish(trace_id: str, url: str, raw_text: str = None):
     logger.info(f"Starting scrape for {url}", extra={"trace_id": trace_id, "url": url})
     try:
+        url_str = str(url)
+        platform = "unknown"
+        if "instagram.com" in url_str:
+            platform = "instagram"
+        elif "facebook.com" in url_str or "fb.watch" in url_str:
+            platform = "facebook"
+            
         if raw_text:
             caption = raw_text
             timestamp = None
         else:
-            caption, timestamp = fetch_post_data(str(url))
+            if platform == "instagram":
+                caption, timestamp = fetch_post_data(url) # This is instagram
+            elif platform == "facebook":
+                from scraper.facebook import fetch_post_data as fetch_fb_data
+                caption, timestamp = fetch_fb_data(url)
+            else:
+                raise ValueError(f"Unsupported platform for URL: {url}")
+
         payload = ScrapePayload(
             trace_id=trace_id,
             source_url=str(url),
+            platform=platform,
             raw_caption=caption,
             timestamp=timestamp,
             scraped_at=datetime.datetime.now(datetime.timezone.utc)
